@@ -2,4 +2,9 @@ node_modules/
 downloads/
 minerva_torrents/*
 !minerva_torrents/.gitkeep
+www/
+dist-apps/
+android/.gradle/
+android/local.properties
+android/app/build/
 

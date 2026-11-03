@@ -10,14 +10,98 @@ const {
 } = require('./platforms.js');
 
 const ROOT = __dirname;
-const TORRENT_DIR = path.join(ROOT, 'minerva_torrents');
+const DATA_ROOT = process.env.VGARCHIVE_DATA_DIR || ROOT;
+const TORRENT_DIR = path.join(DATA_ROOT, 'minerva_torrents');
 const PORT = Number(process.env.PORT || 3000);
+const HOST = process.env.HOST || '127.0.0.1';
 let catalogue = [];
 let buildError = null;
 let torrentClientPromise;
-const torrentDownloads = path.join(ROOT, 'downloads');
+const torrentDownloads = path.join(DATA_ROOT, 'downloads');
 const downloadJobs = new Map();
 const activeTorrents = new Map();
+const metadataCache = new Map();
+const metadataPending = new Map();
+let metadataQueue = Promise.resolve();
+
+function normalizeMetadataTitle(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\([^)]*\)|\[[^\]]*\]/g, ' ')
+    .toLocaleLowerCase('en')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+function titleSimilarity(left, right) {
+  if (!left || !right) return 0;
+  if (left === right) return 1;
+  const leftWords = new Set(left.split(' '));
+  const rightWords = new Set(right.split(' '));
+  const overlap = [...leftWords].filter((word) => rightWords.has(word)).length;
+  return overlap / Math.max(leftWords.size, rightWords.size);
+}
+
+async function requestWikipediaMetadata(gameName) {
+  const query = gameName.replace(/[()[\]{}"']/g, ' ').replace(/\s+/g, ' ').trim();
+  const params = new URLSearchParams({
+    action: 'query',
+    format: 'json',
+    formatversion: '2',
+    generator: 'search',
+    gsrsearch: query,
+    gsrnamespace: '0',
+    gsrlimit: '6',
+    prop: 'pageimages|info|extracts',
+    inprop: 'url',
+    exintro: '1',
+    explaintext: '1',
+    exchars: '260',
+    piprop: 'thumbnail',
+    pithumbsize: '480',
+    pilicense: 'any',
+    redirects: '1',
+  });
+  const response = await fetch(`https://en.wikipedia.org/w/api.php?${params}`, {
+    headers: { 'User-Agent': 'VGArchive/1.0 (https://github.com/Santiagofamo18/VGArchive; local metadata lookup)', Accept: 'application/json' },
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!response.ok) return null;
+  const data = await response.json();
+  const targetTitle = normalizeMetadataTitle(gameName);
+  const pages = Array.isArray(data.query?.pages) ? data.query.pages : [];
+  const candidates = pages
+    .map((page) => ({ page, similarity: titleSimilarity(targetTitle, normalizeMetadataTitle(page.title)) }))
+    .filter(({ page, similarity }) => similarity >= 0.8 && (page.thumbnail?.source || page.extract))
+    .sort((a, b) => b.similarity - a.similarity);
+  const page = candidates[0]?.page;
+  if (!page) return null;
+  return {
+    title: page.title,
+    image: page.thumbnail?.source || '',
+    description: String(page.extract || '').replace(/\s+/g, ' ').trim(),
+    sourceUrl: page.fullurl || `https://en.wikipedia.org/wiki/${encodeURIComponent(page.title.replace(/ /g, '_'))}`,
+    sourceName: 'Wikipedia',
+  };
+}
+
+function getGameMetadata(gameName) {
+  const key = normalizeMetadataTitle(gameName);
+  const cached = metadataCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return Promise.resolve(cached.data);
+  if (metadataPending.has(key)) return metadataPending.get(key);
+
+  const task = metadataQueue.then(() => requestWikipediaMetadata(gameName)).catch(() => null);
+  metadataQueue = task.then(() => undefined, () => undefined);
+  metadataPending.set(key, task);
+  return task.then((metadata) => {
+    metadataCache.set(key, { data: metadata, expiresAt: Date.now() + (metadata ? 7 : 1) * 24 * 60 * 60 * 1000 });
+    if (metadataCache.size > 1200) metadataCache.delete(metadataCache.keys().next().value);
+    return metadata;
+  }).finally(() => metadataPending.delete(key));
+}
 
 function decodeBencode(buffer) {
   let offset = 0;
@@ -147,6 +231,7 @@ function formatBytes(bytes) {
 }
 
 function buildCatalogue() {
+  fs.mkdirSync(TORRENT_DIR, { recursive: true });
   const torrents = fs.readdirSync(TORRENT_DIR, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.torrent'))
     .map((entry) => entry.name)
@@ -331,6 +416,19 @@ function safeTorrentPath(name) {
 
 const server = http.createServer(async (request, response) => {
   const url = new URL(request.url, `http://${request.headers.host || 'localhost'}`);
+  const capacitorOrigins = new Set(['http://localhost', 'https://localhost', 'capacitor://localhost']);
+  const origin = request.headers.origin;
+  if (url.pathname.startsWith('/api/') && capacitorOrigins.has(origin)) {
+    response.setHeader('Access-Control-Allow-Origin', origin);
+    response.setHeader('Vary', 'Origin');
+    response.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    response.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    response.setHeader('Access-Control-Max-Age', '600');
+  }
+  if (request.method === 'OPTIONS' && url.pathname.startsWith('/api/')) {
+    response.writeHead(204);
+    return response.end();
+  }
   if (url.pathname.startsWith('/api/') && buildError) return sendJson(response, 500, { error: buildError });
   if (url.pathname === '/api/summary') {
     const groups = MINERVA_PLATFORM_GROUPS.map((group) => ({
@@ -357,6 +455,11 @@ const server = http.createServer(async (request, response) => {
       || a.name.localeCompare(b.name, 'es')
       || a.platform.localeCompare(b.platform, 'es'));
     return sendJson(response, 200, { results: matches.slice(0, limit), total: matches.length, limit });
+  }
+  if (url.pathname === '/api/metadata') {
+    const name = (url.searchParams.get('name') || '').trim().slice(0, 180);
+    if (name.length < 2) return sendJson(response, 400, { error: 'Indica el título del juego.' });
+    return sendJson(response, 200, { metadata: await getGameMetadata(name) });
   }
   if (url.pathname === '/api/downloads' && request.method === 'GET') {
     return sendJson(response, 200, { downloads: [...downloadJobs.values()].map(publicJob) });
@@ -398,11 +501,15 @@ const server = http.createServer(async (request, response) => {
   }
   const filename = url.pathname === '/' ? 'index.html' : path.basename(decodeURIComponent(url.pathname));
   const fullPath = path.join(ROOT, filename);
-  if (!['index.html', 'styles.css', 'extra.css', 'app.js', 'platforms.js'].includes(filename) || !fs.existsSync(fullPath)) {
+  if (!['index.html', 'styles.css', 'extra.css', 'app.js', 'platforms.js', 'manifest.json', 'service-worker.js', 'icon.svg'].includes(filename) || !fs.existsSync(fullPath)) {
     response.writeHead(404);
     return response.end('No encontrado');
   }
-  const type = filename.endsWith('.css') ? 'text/css; charset=utf-8' : filename.endsWith('.js') ? 'text/javascript; charset=utf-8' : 'text/html; charset=utf-8';
+  const type = filename.endsWith('.css') ? 'text/css; charset=utf-8'
+    : filename.endsWith('.js') ? 'text/javascript; charset=utf-8'
+      : filename.endsWith('.json') ? 'application/manifest+json; charset=utf-8'
+        : filename.endsWith('.svg') ? 'image/svg+xml'
+          : 'text/html; charset=utf-8';
   response.writeHead(200, { 'Content-Type': type });
   fs.createReadStream(fullPath).pipe(response);
 });
@@ -414,4 +521,8 @@ try {
   console.error(`Error al construir el catálogo: ${buildError}`);
 }
 
-server.listen(PORT, '127.0.0.1', () => console.log(`VGArchive disponible en http://localhost:${PORT}`));
+if (require.main === module) {
+  server.listen(PORT, HOST, () => console.log(`VGArchive disponible en http://localhost:${server.address().port}`));
+}
+
+module.exports = { server };

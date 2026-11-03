@@ -2,15 +2,71 @@
   "name": "vgarchive",
   "version": "1.0.0",
   "private": true,
+  "main": "desktop/main.js",
   "packageManager": "pnpm@12.16.1",
   "description": "Buscador local de juegos y descargador selectivo de archivos torrent",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "desktop": "electron .",
+    "copy:mobile": "node scripts/copy-mobile-assets.js",
+    "android:sync": "pnpm copy:mobile && cap sync android",
+    "android:apk": "node scripts/build-android.js",
+    "build:windows": "electron-builder --win nsis portable",
+    "build:linux": "electron-builder --linux AppImage deb"
   },
   "engines": {
-    "node": ">=20.11"
+    "node": ">=22"
   },
   "dependencies": {
+    "@capacitor/core": "^8.0.0",
     "webtorrent": "3.0.21"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^8.0.0",
+    "@capacitor/cli": "^8.0.0",
+    "electron": "45.2.1",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.vgarchive.desktop",
+    "productName": "VGArchive",
+    "directories": {
+      "output": "dist-apps"
+    },
+    "files": [
+      "app.js",
+      "index.html",
+      "styles.css",
+      "extra.css",
+      "platforms.js",
+      "manifest.json",
+      "service-worker.js",
+      "icon.svg",
+      "server.js",
+      "desktop/**/*",
+      "package.json",
+      "!android/**",
+      "!www/**",
+      "!minerva_torrents/**",
+      "!downloads/**",
+      "!dist-apps/**"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "linux": {
+      "category": "Game",
+      "target": [
+        "AppImage",
+        "deb"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   }
 }

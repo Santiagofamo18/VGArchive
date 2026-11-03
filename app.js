@@ -4,10 +4,14 @@ const searchForm = $('#searchForm');
 const mainContent = $('#mainContent');
 const platformMenu = $('#platformMenu');
 const platformById = new Map(window.MINERVA_PLATFORM_GROUPS.flatMap((group) => group.platforms).map((platform) => [platform.id, platform]));
+const nativeCapacitor = Boolean(window.Capacitor?.isNativePlatform?.());
+const serverStorageKey = 'vgarchive-server-url';
 let activeController;
 let downloads = [];
 let downloadsViewOpen = false;
 let selectedPlatform = null;
+let metadataObserver;
+const metadataByName = new Map();
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
@@ -19,6 +23,11 @@ function formatBytes(bytes) {
   const index = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
   const value = bytes / (1024 ** index);
   return `${value.toLocaleString('es-ES', { maximumFractionDigits: value < 10 ? 1 : 0 })} ${units[index]}`;
+}
+
+function apiUrl(path) {
+  const serverUrl = nativeCapacitor ? localStorage.getItem(serverStorageKey) : '';
+  return serverUrl ? new URL(path, serverUrl).toString() : path;
 }
 
 function renderPlatformMenu() {
@@ -41,6 +50,75 @@ function downloadButton(result) {
   return `<button class="download-link" ${existing ? 'disabled' : ''} data-download-name="${escapeHtml(result.name)}" data-download-path="${escapeHtml(result.path)}" data-download-torrent="${escapeHtml(result.torrent)}" title="Descargar solo este archivo"><span>${existing?.status === 'completed' ? '✓' : '↓'}</span>${label}</button>`;
 }
 
+function resultMetadataKey(name) {
+  return String(name).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es').replace(/\s+/g, ' ').trim();
+}
+
+function applyResultMetadata(card, metadata) {
+  const cover = card.querySelector('[data-cover]');
+  const description = card.querySelector('[data-description]');
+  const source = card.querySelector('[data-metadata-source]');
+  cover.replaceChildren();
+  if (metadata?.image) {
+    const image = document.createElement('img');
+    image.src = metadata.image;
+    image.alt = `Imagen de ${card.dataset.metadataName}`;
+    image.loading = 'lazy';
+    image.decoding = 'async';
+    image.referrerPolicy = 'no-referrer';
+    image.addEventListener('error', () => {
+      cover.replaceChildren();
+      cover.classList.add('cover-missing');
+      cover.textContent = 'Portada no disponible';
+    }, { once: true });
+    cover.append(image);
+  } else {
+    cover.classList.add('cover-missing');
+    cover.textContent = 'Portada no disponible';
+  }
+  if (metadata?.description) {
+    description.textContent = metadata.description;
+    description.hidden = false;
+  }
+  if (metadata?.sourceUrl) {
+    source.href = metadata.sourceUrl;
+    source.textContent = `Fuente: ${metadata.sourceName || 'Wikipedia'} ↗`;
+    source.hidden = false;
+  }
+}
+
+async function loadResultMetadata(card) {
+  const name = card.dataset.metadataName;
+  const key = resultMetadataKey(name);
+  if (metadataByName.has(key)) {
+    applyResultMetadata(card, metadataByName.get(key));
+    return;
+  }
+  try {
+    const params = new URLSearchParams({ name });
+    const response = await fetch(apiUrl(`/api/metadata?${params}`));
+    if (!response.ok) throw new Error('No se pudieron cargar los metadatos.');
+    const data = await response.json();
+    metadataByName.set(key, data.metadata || null);
+    applyResultMetadata(card, data.metadata);
+  } catch {
+    metadataByName.set(key, null);
+    applyResultMetadata(card, null);
+  }
+}
+
+function observeResultMetadata() {
+  metadataObserver?.disconnect();
+  metadataObserver = new IntersectionObserver((entries, observer) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      observer.unobserve(entry.target);
+      loadResultMetadata(entry.target);
+    });
+  }, { rootMargin: '360px 0px' });
+  document.querySelectorAll('.result-card[data-metadata-name]').forEach((card) => metadataObserver.observe(card));
+}
+
 function renderResultGroups(results) {
   const sections = [
     { tier: 0, title: 'Nintendo, Sony, Xbox y SEGA', note: '' },
@@ -51,9 +129,15 @@ function renderResultGroups(results) {
     const entries = results.filter((result) => result.tier === section.tier);
     if (!entries.length) return '';
     return `<section class="result-group"><div class="result-group-heading"><h2>${section.title}</h2><span>${entries.length}</span>${section.note ? `<small>${section.note}</small>` : ''}</div><div class="result-list">${entries.map((result) => `
-      <article class="result-card">
-        <div class="result-main"><div class="result-title">${escapeHtml(result.name)}</div><div class="result-path">${escapeHtml(result.path)}</div></div>
-        <div class="result-side"><span class="system-pill" title="${escapeHtml(result.platform)}">${escapeHtml(result.platform)}</span><span class="result-size">${escapeHtml(result.size)}</span>${downloadButton(result)}</div>
+      <article class="result-card" data-metadata-name="${escapeHtml(result.name)}">
+        <div class="result-cover" data-cover><span class="cover-placeholder">Buscando portada…</span></div>
+        <div class="result-card-body">
+          <div class="result-title">${escapeHtml(result.name)}</div>
+          <p class="result-description" data-description hidden></p>
+          <a class="metadata-source" data-metadata-source target="_blank" rel="noopener noreferrer" hidden></a>
+          <div class="result-path">${escapeHtml(result.path)}</div>
+          <div class="result-card-footer"><div class="result-tags"><span class="system-pill" title="${escapeHtml(result.platform)}">${escapeHtml(result.platform)}</span><span class="result-size">${escapeHtml(result.size)}</span></div>${downloadButton(result)}</div>
+        </div>
       </article>`).join('')}</div></section>`;
   }).join('');
 }
@@ -65,6 +149,7 @@ async function runSearch(query = searchInput.value.trim(), updateUrl = true) {
     return;
   }
   if (activeController) activeController.abort();
+  metadataObserver?.disconnect();
   activeController = new AbortController();
   const controller = activeController;
   const queryParams = new URLSearchParams();
@@ -86,7 +171,7 @@ async function runSearch(query = searchInput.value.trim(), updateUrl = true) {
     const params = new URLSearchParams({ limit: '300' });
     if (cleanQuery) params.set('q', cleanQuery);
     if (selectedPlatform) params.set('platform', selectedPlatform.id);
-    const response = await fetch(`/api/search?${params}`, { signal: controller.signal });
+    const response = await fetch(apiUrl(`/api/search?${params}`), { signal: controller.signal });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'No se pudo completar la búsqueda.');
     if (controller !== activeController) return;
@@ -97,6 +182,7 @@ async function runSearch(query = searchInput.value.trim(), updateUrl = true) {
       return;
     }
     $('#resultList').innerHTML = renderResultGroups(data.results);
+    observeResultMetadata();
     if (data.total > data.results.length) {
       $('#moreResults').textContent = `Mostrando ${data.results.length.toLocaleString('es-ES')} de ${data.total.toLocaleString('es-ES')}. Refina la búsqueda para ver menos resultados.`;
       $('#moreResults').hidden = false;
@@ -133,7 +219,7 @@ function renderDownloads() {
 
 async function loadDownloads() {
   try {
-    const response = await fetch('/api/downloads');
+    const response = await fetch(apiUrl('/api/downloads'));
     if (!response.ok) return;
     const previousState = downloads.map((job) => `${job.id}:${job.status}`).join('|');
     downloads = (await response.json()).downloads || [];
@@ -150,7 +236,7 @@ async function startDownload(button) {
   button.disabled = true;
   button.textContent = 'PREPARANDO';
   try {
-    const response = await fetch('/api/downloads', {
+    const response = await fetch(apiUrl('/api/downloads'), {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: button.dataset.downloadName, path: button.dataset.downloadPath, torrent: button.dataset.downloadTorrent }),
     });
@@ -167,13 +253,36 @@ async function startDownload(button) {
 }
 
 async function cancelDownload(id) {
-  await fetch(`/api/downloads/${encodeURIComponent(id)}/cancel`, { method: 'POST' });
+  await fetch(apiUrl(`/api/downloads/${encodeURIComponent(id)}/cancel`), { method: 'POST' });
   await loadDownloads();
 }
 
 searchForm.addEventListener('submit', (event) => {
   event.preventDefault();
   runSearch();
+});
+
+$('#serverSettings').addEventListener('click', () => {
+  const input = $('#serverUrlInput');
+  input.value = nativeCapacitor ? (localStorage.getItem(serverStorageKey) || '') : window.location.origin;
+  $('#serverFormError').hidden = true;
+  $('#serverDialog').showModal();
+});
+
+$('#closeServer').addEventListener('click', () => $('#serverDialog').close());
+$('#serverForm').addEventListener('submit', (event) => {
+  event.preventDefault();
+  const error = $('#serverFormError');
+  try {
+    const value = new URL($('#serverUrlInput').value.trim());
+    if (!['http:', 'https:'].includes(value.protocol)) throw new Error('Usa una dirección que empiece por http:// o https://.');
+    if (nativeCapacitor) localStorage.setItem(serverStorageKey, value.origin);
+    $('#serverDialog').close();
+    if (nativeCapacitor) location.reload();
+  } catch (exception) {
+    error.textContent = exception instanceof TypeError ? 'Escribe una dirección válida, incluida la IP y el puerto.' : exception.message;
+    error.hidden = false;
+  }
 });
 
 window.addEventListener('popstate', () => {
@@ -234,3 +343,5 @@ if (initialQuery.length >= 2 || selectedPlatform) {
 }
 loadDownloads();
 setInterval(loadDownloads, 1400);
+if (nativeCapacitor && !localStorage.getItem(serverStorageKey)) $('#serverDialog').showModal();
+if (!nativeCapacitor && 'serviceWorker' in navigator) navigator.serviceWorker.register('/service-worker.js').catch(() => {});
