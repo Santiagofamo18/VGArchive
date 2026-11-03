@@ -1,0 +1,7 @@
+allowBuilds:
+  bufferutil: false
+  ip-set: true
+  node-datachannel: true
+  utf-8-validate: false
+  utp-native: false
+

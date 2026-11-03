@@ -1,0 +1,5 @@
+node_modules/
+downloads/
+minerva_torrents/*
+!minerva_torrents/.gitkeep
+

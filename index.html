@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#10110f">
+    <title>VGArchive</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/extra.css">
+  </head>
+  <body>
+    <div class="app-shell simple-shell">
+      <header class="site-header">
+        <a class="brand" href="/" aria-label="VGArchive, inicio">
+          <span class="brand-mark" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+          <span>VGArchive<span class="brand-muted">/</span></span>
+        </a>
+        <nav id="platformMenu" class="platform-menu" aria-label="Plataformas"></nav>
+        <button class="downloads-nav" data-view="downloads" type="button">
+          <span aria-hidden="true">↓</span> Descargas <span id="downloadBadge" class="nav-count" hidden>0</span>
+        </button>
+      </header>
+
+      <main id="mainContent" class="content simple-content">
+        <section class="search-area" aria-label="Buscador de juegos">
+          <h1 id="pageTitle" class="page-title">Encuentra tu juego aquí</h1>
+          <form id="searchForm" class="search-form" role="search">
+            <label class="sr-only" for="searchInput">Nombre del juego</label>
+            <div class="search-panel">
+              <span class="large-search-icon" aria-hidden="true"></span>
+              <input id="searchInput" type="search" placeholder="Escribe el nombre del juego" autocomplete="off" aria-label="Nombre del juego">
+              <button class="search-submit" type="submit">Buscar <span>↵</span></button>
+            </div>
+          </form>
+          <div id="selectedPlatform" class="selected-platform" hidden></div>
+        </section>
+
+        <section id="resultsSection" class="results-section" hidden aria-live="polite">
+          <div class="section-heading">
+            <div><div class="eyebrow" id="sectionEyebrow">RESULTADOS</div><h1 id="resultsHeading"></h1></div>
+            <div id="resultsMeta" class="results-meta"></div>
+          </div>
+          <div id="loading" class="loading-state" hidden><span class="spinner"></span> Buscando…</div>
+          <div id="empty" class="empty-state" hidden><span class="empty-icon">⌕</span><h2>No encontramos ese juego</h2><p>Comprueba el nombre o prueba una búsqueda más corta.</p></div>
+          <div id="resultList" class="result-groups"></div>
+          <div id="moreResults" class="more-results" hidden></div>
+        </section>
+
+        <section id="downloadSection" class="download-section" hidden>
+          <div class="section-heading"><div><div class="eyebrow">GESTOR DE TORRENTS</div><h2>Descargas</h2></div><div id="downloadSummary" class="results-meta"></div></div>
+          <div id="downloadList" class="download-list"></div>
+        </section>
+      </main>
+    </div>
+    <script src="/platforms.js" defer></script>
+    <script src="/app.js" defer></script>
+  </body>
+</html>

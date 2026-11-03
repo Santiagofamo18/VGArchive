@@ -1,0 +1,16 @@
+{
+  "name": "vgarchive",
+  "version": "1.0.0",
+  "private": true,
+  "packageManager": "pnpm@12.16.1",
+  "description": "Buscador local de juegos y descargador selectivo de archivos torrent",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20.11"
+  },
+  "dependencies": {
+    "webtorrent": "3.0.21"
+  }
+}
