@@ -62,7 +62,7 @@ pnpm build:windows
 pnpm build:linux
 ```
 
-Windows genera un instalador NSIS y una versión portable; Linux genera un archivo `.tar.gz` portable. Los resultados quedan en `dist-apps/`. GitHub Actions construye los tres destinos al enviar cambios a `main`; también puedes iniciarlo desde la acción **Build VGArchive**.
+Windows genera un instalador NSIS y una versión portable; Linux genera un archivo `.tar.gz` portable. Los resultados quedan en `dist-apps/`. GitHub Actions compila el instalador Windows, el paquete Linux y el APK al enviar cambios a `main`; también puedes iniciarlo desde la acción **Build VGArchive**.
 
 Los lanzadores de escritorio guardan los torrents en la carpeta de datos de usuario. Para permitir que el APK se conecte a la app Electron en la red local, inicia el escritorio con `VGARCHIVE_LAN=1`; usa la dirección IP del PC y el puerto `3000` en el móvil.
 
@@ -71,5 +71,6 @@ Los lanzadores de escritorio guardan los torrents en la carpeta de datos de usua
 - `pnpm start`: servidor web local.
 - `pnpm desktop`: abre VGArchive como app de escritorio durante el desarrollo.
 - `pnpm android:apk`: prepara Capacitor y genera el APK de depuración.
-- `pnpm build:windows`: genera instalador y versión portable de Windows.
+- `pnpm build:windows`: genera el instalador NSIS de Windows.
+- `pnpm build:windows:portable`: genera la versión portable de Windows.
 - `pnpm build:linux`: genera un paquete `.tar.gz` para Linux.

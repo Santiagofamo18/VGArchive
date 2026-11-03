@@ -11,7 +11,8 @@
     "copy:mobile": "node scripts/copy-mobile-assets.js",
     "android:sync": "pnpm copy:mobile && cap sync android",
     "android:apk": "node scripts/build-android.js",
-    "build:windows": "electron-builder --win nsis portable",
+    "build:windows": "electron-builder --win nsis",
+    "build:windows:portable": "electron-builder --win portable",
     "build:linux": "electron-builder --linux"
   },
   "engines": {
