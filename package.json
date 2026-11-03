@@ -12,7 +12,7 @@
     "android:sync": "pnpm copy:mobile && cap sync android",
     "android:apk": "node scripts/build-android.js",
     "build:windows": "electron-builder --win nsis portable",
-    "build:linux": "electron-builder --linux AppImage deb"
+    "build:linux": "electron-builder --linux"
   },
   "engines": {
     "node": ">=22"
