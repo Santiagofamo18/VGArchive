@@ -62,7 +62,7 @@ pnpm build:windows
 pnpm build:linux
 ```
 
-Windows genera un instalador NSIS y una versión portable; Linux genera paquetes AppImage y `.deb`. Los resultados quedan en `dist-apps/`. Para compilar cada destino se recomienda usar su sistema operativo o la acción manual **Build VGArchive** de GitHub Actions.
+Windows genera un instalador NSIS y una versión portable; Linux genera paquetes AppImage y `.deb`. Los resultados quedan en `dist-apps/`. GitHub Actions construye los tres destinos al enviar cambios a `main`; también puedes iniciarlo desde la acción **Build VGArchive**.
 
 Los lanzadores de escritorio guardan los torrents en la carpeta de datos de usuario. Para permitir que el APK se conecte a la app Electron en la red local, inicia el escritorio con `VGARCHIVE_LAN=1`; usa la dirección IP del PC y el puerto `3000` en el móvil.
 

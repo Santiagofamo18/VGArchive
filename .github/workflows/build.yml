@@ -1,6 +1,8 @@
 name: Build VGArchive
 
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -50,6 +52,7 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: android-actions/setup-android@v3
+      - run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
       - uses: pnpm/action-setup@v4
         with:
           version: 12.16.1
