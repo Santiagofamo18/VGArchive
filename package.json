@@ -60,8 +60,7 @@
     "linux": {
       "category": "Game",
       "target": [
-        "AppImage",
-        "deb"
+        "tar.gz"
       ]
     },
     "nsis": {

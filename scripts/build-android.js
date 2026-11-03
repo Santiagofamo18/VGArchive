@@ -15,5 +15,6 @@ run(process.execPath, [path.join(__dirname, 'copy-mobile-assets.js')]);
 if (!fs.existsSync(path.join(root, 'android'))) run('pnpm', ['exec', 'cap', 'add', 'android']);
 run('pnpm', ['exec', 'cap', 'sync', 'android']);
 const gradle = isWindows ? 'gradlew.bat' : './gradlew';
+if (!isWindows) fs.chmodSync(path.join(root, 'android', 'gradlew'), 0o755);
 run(gradle, ['assembleDebug'], path.join(root, 'android'));
 console.log(`APK generado en ${path.join(root, 'android', 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk')}`);
